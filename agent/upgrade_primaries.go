@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"sync"
 
 	"github.com/greenplum-db/gp-common-go-libs/gplog"
 	multierror "github.com/hashicorp/go-multierror"
@@ -47,29 +46,26 @@ func UpgradePrimaries(stateDir string, request *idl.UpgradePrimariesRequest) err
 	//
 	// Upgrade each segment concurrently
 	//
-	wg := &sync.WaitGroup{}
-	agentErrs := make(chan error, len(segments))
+	upgradeResponse := make(chan error, len(segments))
+
 	for _, segment := range segments {
 		segment := segment // capture the range variable
 
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			upgradeError := upgradeSegment(segment, request, host)
-			if upgradeError != nil {
-				agentErrs <- upgradeError
-			}
+			upgradeResponse <- upgradeSegment(segment, request, host)
 		}()
 	}
-	wg.Wait()
-	close(agentErrs)
+
+	for range segments {
+		response := <-upgradeResponse
+		if response != nil {
+			err = multierror.Append(err, response)
+		}
+	}
 
 	//
 	// Collect and handle errors
 	//
-	for agentErr := range agentErrs {
-		err = multierror.Append(err, agentErr)
-	}
 	if err != nil {
 		return xerrors.Errorf("upgrading primaries: %w", err)
 	}
