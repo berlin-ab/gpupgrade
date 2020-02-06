@@ -48,7 +48,7 @@ func TestRsync(t *testing.T) {
 		targetDir := getTempDir(t)
 		defer os.RemoveAll(targetDir)
 
-		writeToFile(sourceDir+"/hi", []byte("hi"), t)
+		writeToFile(filepath.Join(sourceDir, "hi"), []byte("hi"), t)
 
 		if err := agent.Rsync(sourceDir, targetDir, []string{}); err != nil {
 			t.Errorf("Rsync() returned error %+v", err)
@@ -70,16 +70,16 @@ func TestRsync(t *testing.T) {
 		targetDir := getTempDir(t)
 		defer os.RemoveAll(targetDir)
 
-		writeToFile(targetDir+"/file-that-should-get-removed", []byte("goodbye"), t)
+		writeToFile(filepath.Join(targetDir, "target-file-that-should-get-removed"), []byte("goodbye"), t)
 
 		if err := agent.Rsync(sourceDir, targetDir, []string{}); err != nil {
 			t.Errorf("Rsync() returned error %+v", err)
 		}
 
-		_, statError := os.Stat(filepath.Join(targetDir, "file-that-should-get-removed"))
+		_, statError := os.Stat(filepath.Join(targetDir, "target-file-that-should-get-removed"))
 
 		if os.IsExist(statError) {
-			t.Errorf("target directory file 'file-that-should-get-removed' should not exist, but it does")
+			t.Errorf("target directory file 'target-file-that-should-get-removed' should not exist, but it does")
 		}
 	})
 
@@ -90,17 +90,17 @@ func TestRsync(t *testing.T) {
 		targetDir := getTempDir(t)
 		defer os.RemoveAll(targetDir)
 
-		writeToFile(filepath.Join(sourceDir, "file-that-should-get-excluded"), []byte("goodbye"), t)
+		writeToFile(filepath.Join(sourceDir, "source-file-that-should-get-excluded"), []byte("goodbye"), t)
 
-		err := agent.Rsync(sourceDir, targetDir, []string{"file-that-should-get-excluded"})
+		err := agent.Rsync(sourceDir, targetDir, []string{"source-file-that-should-get-excluded"})
 		if err != nil {
 			t.Errorf("Rsync() returned error %+v", err)
 		}
 
-		_, statError := os.Stat(filepath.Join(targetDir, "file-that-should-get-excluded"))
+		_, statError := os.Stat(filepath.Join(targetDir, "source-file-that-should-get-excluded"))
 
 		if os.IsExist(statError) {
-			t.Errorf("target directory file 'file-that-should-get-excluded' should not exist, but it does")
+			t.Errorf("target directory file 'source-file-that-should-get-excluded' should not exist, but it does")
 		}
 	})
 
@@ -111,31 +111,31 @@ func TestRsync(t *testing.T) {
 		targetDir := getTempDir(t)
 		defer os.RemoveAll(targetDir)
 
-		writeToFile(filepath.Join(sourceDir, "file-that-should-get-copied"), []byte("new file"), t)
-		writeToFile(filepath.Join(targetDir, "file-that-should-get-ignored"), []byte("i'm still here"), t)
-		writeToFile(filepath.Join(targetDir, "another-file-that-should-get-ignored"), []byte("i'm still here"), t)
+		writeToFile(filepath.Join(sourceDir, "source-file-that-should-get-copied"), []byte("new file"), t)
+		writeToFile(filepath.Join(targetDir, "target-file-that-should-get-ignored"), []byte("i'm still here"), t)
+		writeToFile(filepath.Join(targetDir, "another-target-file-that-should-get-ignored"), []byte("i'm still here"), t)
 
-		err := agent.Rsync(sourceDir, targetDir, []string{"file-that-should-get-ignored", "another-file-that-should-get-ignored"})
+		err := agent.Rsync(sourceDir, targetDir, []string{"target-file-that-should-get-ignored", "another-target-file-that-should-get-ignored"})
 		if err != nil {
 			t.Errorf("Rsync() returned error %+v", err)
 		}
 
-		_, statError := os.Stat(filepath.Join(targetDir, "file-that-should-get-ignored"))
+		_, statError := os.Stat(filepath.Join(targetDir, "target-file-that-should-get-ignored"))
 
 		if os.IsNotExist(statError) {
-			t.Error("target directory file 'file-that-should-get-ignored' should still exist, but it does not")
+			t.Error("target directory file 'target-file-that-should-get-ignored' should still exist, but it does not")
 		}
 
-		_, statError = os.Stat(filepath.Join(targetDir, "another-file-that-should-get-ignored"))
+		_, statError = os.Stat(filepath.Join(targetDir, "another-target-file-that-should-get-ignored"))
 
 		if os.IsNotExist(statError) {
-			t.Error("target directory file 'another-file-that-should-get-ignored' should still exist, but it does not")
+			t.Error("target directory file 'another-target-file-that-should-get-ignored' should still exist, but it does not")
 		}
 
-		_, statError = os.Stat(filepath.Join(targetDir, "file-that-should-get-copied"))
+		_, statError = os.Stat(filepath.Join(targetDir, "source-file-that-should-get-copied"))
 
 		if os.IsNotExist(statError) {
-			t.Error("target directory file 'file-that-should-get-copied' should exist, but does not")
+			t.Error("target directory file 'source-file-that-should-get-copied' should exist, but does not")
 		}
 	})
 
