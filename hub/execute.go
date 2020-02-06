@@ -14,7 +14,7 @@ import (
 )
 
 func (h *Hub) Execute(request *idl.ExecuteRequest, stream idl.CliToHub_ExecuteServer) (err error) {
-	masterBackupDir := filepath.Join(h.StateDir, "master.bak")
+	masterBackupDir := filepath.Join(h.StateDir, masterBackup)
 
 	s, err := BeginStep(h.StateDir, "execute", stream)
 	if err != nil {
