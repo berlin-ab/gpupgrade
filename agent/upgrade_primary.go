@@ -7,10 +7,6 @@ import (
 	"github.com/greenplum-db/gpupgrade/upgrade"
 )
 
-//
-// Functions to perform an upgrade of a single segment:
-//
-
 func upgradeSegment(segment Segment, request *idl.UpgradePrimariesRequest, host string) error {
 	err := restoreBackup(request, segment)
 
