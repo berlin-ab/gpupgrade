@@ -76,13 +76,10 @@ func TestRsync(t *testing.T) {
 			t.Errorf("Rsync() returned error %+v", err)
 		}
 
-		targetContents, _ := ioutil.ReadFile(targetDir + "/file-that-should-get-removed")
+		_, statError := os.Stat(filepath.Join(targetDir, "file-that-should-get-removed"))
 
-		// XXX this checks that the file is either empty or does not exist; we
-		// should just check for existence
-		if bytes.Compare(targetContents, []byte("")) != 0 {
-			t.Errorf("target directory file 'file-that-should-get-removed' should not exist, but contains %v",
-				string(targetContents))
+		if os.IsExist(statError) {
+			t.Errorf("target directory file 'file-that-should-get-removed' should not exist, but it does")
 		}
 	})
 
@@ -100,11 +97,10 @@ func TestRsync(t *testing.T) {
 			t.Errorf("Rsync() returned error %+v", err)
 		}
 
-		targetContents, _ := ioutil.ReadFile(filepath.Join(targetDir, "file-that-should-get-excluded"))
+		_, statError := os.Stat(filepath.Join(targetDir, "file-that-should-get-excluded"))
 
-		if bytes.Compare(targetContents, []byte("")) != 0 {
-			t.Errorf("target directory file 'file-that-should-get-excluded' should not exist, but contains %v",
-				string(targetContents))
+		if os.IsExist(statError) {
+			t.Errorf("target directory file 'file-that-should-get-excluded' should not exist, but it does")
 		}
 	})
 
