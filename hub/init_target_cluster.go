@@ -192,66 +192,63 @@ func WriteSegmentArray(config []string, source *utils.Cluster, ports []uint32) (
 }
 
 func getTargetConfig(source *utils.Cluster, desiredPorts []uint32) (*cluster.SegConfig, []*cluster.SegConfig, error) {
-	// Partition segments by host in order to correctly assign ports.
-	segmentsByHost := make(map[string][]cluster.SegConfig)
-	for _, content := range source.ContentIDs {
-		if content == -1 {
-			continue
-		}
-		segment := source.Primaries[content]
-		segmentsByHost[segment.Hostname] = append(segmentsByHost[segment.Hostname], segment)
-	}
-
-	if len(desiredPorts) == 0 {
-		// Create a default port range, starting with the pg_upgrade default of
-		// 50432. Reserve enough ports to handle the host with the most
-		// segments.
-		var maxSegs int
-		for _, segments := range segmentsByHost {
-			if len(segments) > maxSegs {
-				maxSegs = len(segments)
-			}
-		}
-
-		// Add 1 for the reserved master port
-		for i := 0; i < maxSegs+1; i++ {
-			desiredPorts = append(desiredPorts, uint32(50432+i))
-		}
-	}
-
-	desiredPorts = sanitize(desiredPorts)
-	masterPort := desiredPorts[0]
-	segmentPorts := desiredPorts[1:]
+	segmentsByHost := GroupSegmentsByHostname(source)
+	targetPorts := DeterminePortsForTarget(desiredPorts, segmentsByHost)
 
 	// Use a copy of the source cluster's segment configs rather than modifying
 	// the source cluster. This keeps the in-memory representation of source
 	// cluster consistent with its on-disk representation.
-	copySegments := make(map[int]cluster.SegConfig)
-	for _, segments := range segmentsByHost {
-		if len(segmentPorts) < len(segments) {
-			return nil, nil, errors.New("not enough ports for each segment")
-		}
+	copyOrPrimaries := make(map[int]cluster.SegConfig)
 
-		for i, segment := range segments {
-			segment.Port = int(segmentPorts[i])
-			segment.DataDir = upgradeDataDir(segment.DataDir)
-			copySegments[segment.ContentID] = segment
+	for _, segments := range segmentsByHost {
+		numPrimariesFound := 0
+		for _, segment := range segments {
+			if segment.ContentID == cluster.MASTER_CONTENT_ID {
+				continue
+			}
+
+			if len(targetPorts.PrimaryPorts) > numPrimariesFound {
+				segment.Port = int(targetPorts.PrimaryPorts[numPrimariesFound])
+				segment.DataDir = upgradeDataDir(segment.DataDir)
+				copyOrPrimaries[segment.ContentID] = segment
+				numPrimariesFound++
+			} else {
+				return nil, nil, errors.New("not enough ports for each segment")
+			}
 		}
 	}
 
-	master, ok := source.Primaries[-1]
-	master.Port = int(masterPort)
+	master, ok := source.Primaries[cluster.MASTER_CONTENT_ID]
+	master.Port = int(targetPorts.MasterPort)
 	master.DataDir = upgradeDataDir(master.DataDir)
 	if !ok {
 		return nil, nil, errors.New("old cluster contains no master segment")
 	}
 
-	returnSegments := []*cluster.SegConfig{}
-	for _, seg := range copySegments {
-		seg := seg // capture the range variable
-		returnSegments = append(returnSegments, &seg)
+	return &master, flattenSegments(copyOrPrimaries), nil
+}
+
+//
+// Transform map of ContentId -> SegConfig to a list of
+// SegConfigs
+//
+// - enforces a sorted order to stabilize test that assumes an order
+//
+func flattenSegments(copySegments map[int]cluster.SegConfig) []*cluster.SegConfig {
+	// Determine ordering based on ContentId
+	keys := []int{}
+	for key, _ := range copySegments {
+		keys = append(keys, key)
 	}
-	return &master, returnSegments, nil
+	sort.Ints(keys)
+
+	// Build up list to return
+	returnSegments := []*cluster.SegConfig{}
+	for _, key := range keys {
+		segment := copySegments[key]
+		returnSegments = append(returnSegments, &segment)
+	}
+	return returnSegments
 }
 
 func CreateAllDataDirectories(agentConns []*Connection, source *utils.Cluster) error {

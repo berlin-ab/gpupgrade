@@ -41,6 +41,8 @@ type SegConfig struct {
 	Role      string
 }
 
+const MASTER_CONTENT_ID = -1
+
 const (
 	PrimaryRole = "p"
 	MirrorRole  = "m"
