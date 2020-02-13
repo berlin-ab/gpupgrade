@@ -56,8 +56,8 @@ func (s *Server) writeConf(sourceDBConn *dbconn.DBConn, ports []uint32) (int, er
 	return masterPort, WriteInitsystemFile(gpinitsystemConfig, s.initsystemConfPath())
 }
 
-func (s *Server) CreateTargetCluster(stream step.OutStreams, masterPort int) error {
-	err := s.InitTargetCluster(stream)
+func (s *Server) CreateTargetCluster(stream step.OutStreams, masterPort int, targetPorts TargetPorts) error {
+	err := s.InitTargetCluster(stream, targetPorts)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (s *Server) CreateTargetCluster(stream step.OutStreams, masterPort int) err
 	return nil
 }
 
-func (s *Server) InitTargetCluster(stream step.OutStreams) error {
+func (s *Server) InitTargetCluster(stream step.OutStreams, targetPorts TargetPorts) error {
 	agentConns, err := s.AgentConns()
 	if err != nil {
 		return errors.Wrap(err, "Could not get/create agents")
@@ -88,7 +88,21 @@ func (s *Server) InitTargetCluster(stream step.OutStreams) error {
 		return err
 	}
 
-	return RunInitsystemForTargetCluster(stream, s.Target, s.initsystemConfPath())
+	err = RunInitsystemForTargetCluster(stream, s.Target, s.initsystemConfPath())
+	if err != nil {
+		return err
+	}
+
+	return UpgradeStandby(StandbyConfig{
+		GreenplumEnv: &greenplumEnv{
+			binDir:              s.Target.BinDir,
+			masterPort:          int(targetPorts.MasterPort),
+			masterDataDirectory: s.Target.MasterDataDir(),
+		},
+		Port:          int(targetPorts.StandbyPort),
+		Hostname:      s.Source.StandbyHostname(),
+		DataDirectory: s.Source.StandbyDataDirectory() + "_upgrade",
+	})
 }
 
 func GetCheckpointSegmentsAndEncoding(gpinitsystemConfig []string, dbConnector *dbconn.DBConn) ([]string, error) {
@@ -160,6 +174,16 @@ func sanitize(ports []uint32) []uint32 {
 
 func WriteSegmentArray(config []string, source *utils.Cluster, ports []uint32) ([]string, int, error) {
 	master, segments, err := getTargetConfig(source, ports)
+
+	var primaries []*cluster.SegConfig
+
+	for _, segment := range segments {
+		segment := segment
+		if segment.Role == cluster.PrimaryRole && segment.ContentID != cluster.MASTER_CONTENT_ID {
+			primaries = append(primaries, segment)
+		}
+	}
+
 	if err != nil {
 		return nil, 0, err
 	}
@@ -175,14 +199,14 @@ func WriteSegmentArray(config []string, source *utils.Cluster, ports []uint32) (
 	)
 
 	config = append(config, "declare -a PRIMARY_ARRAY=(")
-	for _, segment := range segments {
+	for _, primary := range primaries {
 		config = append(config,
 			fmt.Sprintf("\t%s~%d~%s~%d~%d~0",
-				segment.Hostname,
-				segment.Port,
-				segment.DataDir,
-				segment.DbID,
-				segment.ContentID,
+				primary.Hostname,
+				primary.Port,
+				primary.DataDir,
+				primary.DbID,
+				primary.ContentID,
 			),
 		)
 	}
@@ -203,7 +227,7 @@ func getTargetConfig(source *utils.Cluster, desiredPorts []uint32) (*cluster.Seg
 	for _, segments := range segmentsByHost {
 		numPrimariesFound := 0
 		for _, segment := range segments {
-			if segment.ContentID == cluster.MASTER_CONTENT_ID {
+			if segment.ContentID == cluster.MASTER_CONTENT_ID || segment.Role == cluster.MirrorRole {
 				continue
 			}
 
@@ -212,8 +236,6 @@ func getTargetConfig(source *utils.Cluster, desiredPorts []uint32) (*cluster.Seg
 				segment.DataDir = upgradeDataDir(segment.DataDir)
 				copyOrPrimaries[segment.ContentID] = segment
 				numPrimariesFound++
-			} else {
-				return nil, nil, errors.New("not enough ports for each segment")
 			}
 		}
 	}

@@ -91,7 +91,9 @@ func (s *Server) InitializeCreateCluster(in *idl.InitializeCreateClusterRequest,
 	})
 
 	st.Run(idl.Substep_INIT_TARGET_CLUSTER, func(stream step.OutStreams) error {
-		return s.CreateTargetCluster(stream, s.Config.TargetMasterPort)
+		targetPorts := DeterminePortsForTarget(in.Ports, GroupSegmentsByHostname(s.Source))
+
+		return s.CreateTargetCluster(stream, s.Config.TargetMasterPort, targetPorts)
 	})
 
 	st.Run(idl.Substep_SHUTDOWN_TARGET_CLUSTER, func(stream step.OutStreams) error {

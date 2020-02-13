@@ -54,7 +54,7 @@ func upgradeStandby(standbyConfig StandbyConfig) error {
 // standby for the cluster.
 //
 func gpinitstandbyRemove(standbyConfig StandbyConfig) error {
-	return standbyConfig.Run("gpinitstandby", "-r")
+	return standbyConfig.Run("gpinitstandby", "-r", "-a")
 }
 
 func gpinitstandbyCreate(standbyConfig StandbyConfig) error {

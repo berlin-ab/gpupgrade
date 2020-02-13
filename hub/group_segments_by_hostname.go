@@ -11,5 +11,9 @@ func GroupSegmentsByHostname(source *utils.Cluster) map[string][]cluster.SegConf
 		segment := source.Primaries[content]
 		segmentsByHost[segment.Hostname] = append(segmentsByHost[segment.Hostname], segment)
 	}
+	for _, content := range source.ContentIDs {
+		segment := source.Mirrors[content]
+		segmentsByHost[segment.Hostname] = append(segmentsByHost[segment.Hostname], segment)
+	}
 	return segmentsByHost
 }

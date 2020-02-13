@@ -40,8 +40,34 @@ func clonePortsFromCluster(db *sql.DB, src *cluster.Cluster) (err error) {
 
 	for _, content := range src.ContentIDs {
 		port := src.Primaries[content].Port
-		res, err := tx.Exec("UPDATE gp_segment_configuration SET port = $1 WHERE content = $2",
+		res, err := tx.Exec("UPDATE gp_segment_configuration SET port = $1 WHERE content = $2  and role = 'p'",
 			port, content)
+		if err != nil {
+			return xerrors.Errorf("updating segment configuration: %w", err)
+		}
+
+		// We should have updated only one row. More than one implies that
+		// gp_segment_configuration has a primary and a mirror up for a single
+		// content ID, and we can't handle mirrors at this point.
+		rows, err := res.RowsAffected()
+		if err != nil {
+			// An error should only occur here if the driver does not support
+			// this call, and we know that the postgres driver does.
+			panic(fmt.Sprintf("retrieving number of rows updated: %v", err))
+		}
+		if rows != 1 {
+			return xerrors.Errorf("updated %d rows for content %d, expected 1", rows, content)
+		}
+	}
+
+	for _, content := range src.ContentIDs {
+		if content != cluster.MASTER_CONTENT_ID {
+			continue
+		}
+
+		port := src.Mirrors[content].Port
+		res, err := tx.Exec("UPDATE gp_segment_configuration SET port = $1 WHERE content = -1  and role = 'm'",
+			port)
 		if err != nil {
 			return xerrors.Errorf("updating segment configuration: %w", err)
 		}
