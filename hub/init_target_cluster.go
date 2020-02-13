@@ -159,6 +159,39 @@ func sanitize(ports []uint32) []uint32 {
 }
 
 func WriteSegmentArray(config []string, source *utils.Cluster, ports []uint32) ([]string, int, error) {
+	master, segments, err := getTargetConfig(source, ports)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	config = append(config,
+		fmt.Sprintf("QD_PRIMARY_ARRAY=%s~%d~%s~%d~%d~0",
+			master.Hostname,
+			master.Port,
+			master.DataDir,
+			master.DbID,
+			master.ContentID,
+		),
+	)
+
+	config = append(config, "declare -a PRIMARY_ARRAY=(")
+	for _, segment := range segments {
+		config = append(config,
+			fmt.Sprintf("\t%s~%d~%s~%d~%d~0",
+				segment.Hostname,
+				segment.Port,
+				segment.DataDir,
+				segment.DbID,
+				segment.ContentID,
+			),
+		)
+	}
+	config = append(config, ")")
+
+	return config, master.Port, nil
+}
+
+func getTargetConfig(source *utils.Cluster, desiredPorts []uint32) (*cluster.SegConfig, []*cluster.SegConfig, error) {
 	// Partition segments by host in order to correctly assign ports.
 	segmentsByHost := make(map[string][]cluster.SegConfig)
 	for _, content := range source.ContentIDs {
@@ -169,7 +202,7 @@ func WriteSegmentArray(config []string, source *utils.Cluster, ports []uint32) (
 		segmentsByHost[segment.Hostname] = append(segmentsByHost[segment.Hostname], segment)
 	}
 
-	if len(ports) == 0 {
+	if len(desiredPorts) == 0 {
 		// Create a default port range, starting with the pg_upgrade default of
 		// 50432. Reserve enough ports to handle the host with the most
 		// segments.
@@ -182,13 +215,13 @@ func WriteSegmentArray(config []string, source *utils.Cluster, ports []uint32) (
 
 		// Add 1 for the reserved master port
 		for i := 0; i < maxSegs+1; i++ {
-			ports = append(ports, uint32(50432+i))
+			desiredPorts = append(desiredPorts, uint32(50432+i))
 		}
 	}
 
-	ports = sanitize(ports)
-	masterPort := ports[0]
-	segmentPorts := ports[1:]
+	desiredPorts = sanitize(desiredPorts)
+	masterPort := desiredPorts[0]
+	segmentPorts := desiredPorts[1:]
 
 	// Use a copy of the source cluster's segment configs rather than modifying
 	// the source cluster. This keeps the in-memory representation of source
@@ -196,50 +229,29 @@ func WriteSegmentArray(config []string, source *utils.Cluster, ports []uint32) (
 	copySegments := make(map[int]cluster.SegConfig)
 	for _, segments := range segmentsByHost {
 		if len(segmentPorts) < len(segments) {
-			return nil, 0, errors.New("not enough ports for each segment")
+			return nil, nil, errors.New("not enough ports for each segment")
 		}
 
 		for i, segment := range segments {
 			segment.Port = int(segmentPorts[i])
+			segment.DataDir = upgradeDataDir(segment.DataDir)
 			copySegments[segment.ContentID] = segment
 		}
 	}
 
 	master, ok := source.Primaries[-1]
+	master.Port = int(masterPort)
+	master.DataDir = upgradeDataDir(master.DataDir)
 	if !ok {
-		return nil, 0, errors.New("old cluster contains no master segment")
+		return nil, nil, errors.New("old cluster contains no master segment")
 	}
 
-	config = append(config,
-		fmt.Sprintf("QD_PRIMARY_ARRAY=%s~%d~%s~%d~%d~0",
-			master.Hostname,
-			masterPort,
-			upgradeDataDir(master.DataDir),
-			master.DbID,
-			master.ContentID,
-		),
-	)
-
-	config = append(config, "declare -a PRIMARY_ARRAY=(")
-	for _, content := range source.ContentIDs {
-		if content == -1 {
-			continue
-		}
-
-		segment := copySegments[content]
-		config = append(config,
-			fmt.Sprintf("\t%s~%d~%s~%d~%d~0",
-				segment.Hostname,
-				segment.Port,
-				upgradeDataDir(segment.DataDir),
-				segment.DbID,
-				segment.ContentID,
-			),
-		)
+	returnSegments := []*cluster.SegConfig{}
+	for _, seg := range copySegments {
+		seg := seg // capture the range variable
+		returnSegments = append(returnSegments, &seg)
 	}
-	config = append(config, ")")
-
-	return config, int(masterPort), nil
+	return &master, returnSegments, nil
 }
 
 func CreateAllDataDirectories(agentConns []*Connection, source *utils.Cluster) error {
