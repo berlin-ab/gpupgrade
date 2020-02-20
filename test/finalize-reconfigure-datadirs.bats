@@ -57,8 +57,9 @@ teardown() {
     grep "${target_cluster_master_data_directory}" "${gpperfmon_config_file}" || \
         fail "got gpperfmon.conf file $(cat $gpperfmon_config_file), wanted it to include ${target_cluster_master_data_directory}"
 
-    # ensure that the new cluster is queryable
-    $GPHOME_NEW/bin/psql postgres -c "select *, version() from gp_segment_configuration"
+    # ensure that the new cluster is queryable, and has updated configuration
+    segment_configuration=$($GPHOME_NEW/bin/psql --no-align --tuples-only postgres -c "select *, version() from gp_segment_configuration")
+    [[ $segment_configuration == *"$target_cluster_master_data_directory"* ]] || fail "expected $segment_configuration to include $target_cluster_master_data_directory"
 }
 
 setup_state_dir() {
