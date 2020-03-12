@@ -111,7 +111,7 @@ The target cluster is now running. The PGPORT is %s and the MASTER_DATA_DIRECTOR
 
 You may now run queries against the target database and perform any other validation desired prior to finalizing your upgrade.
 
-WARNING: If any queries modify the target database during this time, the target database will be inconsistent with the source database.
+WARNING: If any queries modify the target database during this time, it will be inconsistent with the source database.
 
 NEXT ACTIONS
 ------------
