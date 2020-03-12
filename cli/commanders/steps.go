@@ -139,7 +139,6 @@ func Finalize(client idl.CliToHubClient, verbose bool) error {
 		return xerrors.Errorf("Finalize: %w", err)
 	}
 
-	// TODO version number
 	fmt.Println("")
 	fmt.Println("Finalize completed successfully.")
 	fmt.Println("")
